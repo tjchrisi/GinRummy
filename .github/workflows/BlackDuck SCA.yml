@@ -1,31 +1,94 @@
 
-name: Black Duck SCA Scan
+name: Black Duck SCA
+
 on:
   push:
-    branches: [main, develop]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main, develop]
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: write         # needed for Fix PRs / SARIF upload
+  security-events: write  # needed to upload SARIF to GitHub code scanning
+  pull-requests: write    # PR comments / Fix PRs
+  actions: read
 
 jobs:
-  sca-scan:
+  sca:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup JDK (if needed for build support)
+      # If your build or Detect needs a JRE/JDK, set it up.
+      # setup-java requires 'distribution' (e.g., temurin).
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          distribution: 'temurin'   # REQUIRED input for setup-java
+          java-version: '17'        # pick 11/17/21 per your project
+      # (You can remove this step if your project doesn't need Java.)
 
-      - name: Run Black Duck SCA Scan
+      # Optional: build to ensure lockfiles/artifacts exist (Maven example)
+      - name: Build (skip tests)
+        run: |
+          if [ -f "pom.xml" ]; then
+            mvn -B -DskipTests package
+          else
+            echo "No Maven build detected; skipping."
+          fi
+
+      # ---- Black Duck SCA Scan ----
+      - name: Black Duck SCA Scan
         uses: blackduck-inc/black-duck-security-scan@v2
         env:
           BLACKDUCK_URL: ${{ secrets.BLACKDUCK_URL }}
           BLACKDUCK_API_TOKEN: ${{ secrets.BLACKDUCK_API_TOKEN }}
+
+        # The action auto-detects SCA (Detect) and will:
+        # - Run Full Scan on push (persist results)
+        # - Run PR Scan on pull_request (rapid/diff scan)
+        # - Optionally create Fix PRs, add PR comments, and export SARIF
+        # See action docs for all available inputs; below are common ones.
         with:
-          # Optional: specify project name
+          # Basic config (explicit SCA inputs if you prefer):
           blackducksca_url: ${{ secrets.BLACKDUCK_URL }}
           blackducksca_api_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
-          # Optional flags for fix PRs, SARIF, policy failures
+
+          # ---- Optional feature toggles (uncomment as needed) ----
+
+          # Break-the-build on policy violations (quality gates)
+          # Set severity filters or rely on server-side policies
+          # fail-on-policy-violations: true
+
+          # Generate and upload SARIF to GitHub Advanced Security
+          # (enables code scanning alerts in Security tab)
+          # create-sarif-report: true
+          # upload-sarif-report: true
+
+          # Add PR comments for new issues found
+          # enable-pull-request-comments: true
+
+          # Auto Fix PRs for vulnerable components (when available)
+          # enable-fix-prs: true
+
+          # Project/Version naming (optional; defaults are usually fine)
+          # detect_project_name: ${{ github.event.repository.name }}
+          # detect_project_version_name: ${{ github.sha }}
+
+          # Exclusions or custom detect flags (advanced)
+          # detect_excluded_directories: "dist,node_modules"
+          # detect_excluded_extensions: "zip,jar"
+
+      # Optional: make scan artifacts available (logs, reports)
+      - name: Archive Black Duck Scan Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bd-logs
+          path: |
+            .bridge/logs
+            detect.log
+          if-no-files-found: ignore
