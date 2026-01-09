@@ -1,0 +1,31 @@
+
+name: Black Duck SCA Scan
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  sca-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK (if needed for build support)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+
+      - name: Run Black Duck SCA Scan
+        uses: blackduck-inc/black-duck-security-scan@v2
+        env:
+          BLACKDUCK_URL: ${{ secrets.BLACKDUCK_URL }}
+          BLACKDUCK_API_TOKEN: ${{ secrets.BLACKDUCK_API_TOKEN }}
+        with:
+          # Optional: specify project name
+          blackducksca_url: ${{ secrets.BLACKDUCK_URL }}
+          blackducksca_api_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
+          # Optional flags for fix PRs, SARIF, policy failures
