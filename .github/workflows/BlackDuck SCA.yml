@@ -8,7 +8,6 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
-# Permissions needed for SARIF upload and PR interactions (comments/Fix PRs)
 permissions:
   contents: write
   security-events: write
@@ -22,16 +21,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # If your build or Detect needs Java, set it up.
-      # setup-java v2+ requires 'distribution' (e.g., temurin).
+      # Only needed if your project/build requires Java.
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'     # REQUIRED input (temurin, zulu, microsoft, etc.)
-          java-version: '17'          # Choose 11/17/21 per your project
-      # Remove the Java step if your project doesn't need Java.
+          distribution: 'temurin'   # REQUIRED by setup-java v2+ / v4
+          java-version: '17'
+      # Remove this step if your project doesn't need Java.
+      # Docs show 'distribution' is mandatory. [2](https://polaris.synopsys.com/developer/default/documentation/c_cli)
 
-      # Optional: Example build step (Maven). Adjust/remove for your stack.
+      # Optional: build example (Maven). Adjust/remove for your stack.
       - name: Build (skip tests)
         run: |
           if [ -f "pom.xml" ]; then
@@ -40,16 +39,16 @@ jobs:
             echo "No Maven project detected; skipping build."
           fi
 
-      # ---- Black Duck SCA Scan via official action ----
+      # ---- Black Duck SCA Scan ----
       - name: Black Duck SCA Scan
-        uses: blackduck-inc/black-duck-security-scan@v2
+        uses: blackduck-inc/black-duck-security-scan@v2.1.1
+        # Pinning a specific release avoids input drift; the docs show v2.x usage. [1](https://www.youtube.com/watch?v=Z5WBa_in6yM)
         with:
-          # REQUIRED: provide product URL + token
-          blackducksca_url: ${{ vars.BLACKDUCK_URL }}          # from Repository Variables
-          blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}  # from Secrets (recommended)
+          blackducksca_url:   ${{ secrets.BLACKDUCK_URL }}
+          blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
 
-          # ---- Optional feature toggles (uncomment as needed) ----
-          # Fail build on specific severities (acts as quality gate)
+          # --- Optional features (uncomment to enable) ---
+          # Fail build on certain severities (quality gate)
           # blackducksca_scan_failure_severities: "CRITICAL,HIGH"
 
           # Create & upload SARIF to GitHub code scanning
@@ -57,3 +56,22 @@ jobs:
           # blackducksca_reports_sarif_file_path: "blackduck-sca.sarif"
           # blackducksca_upload_sarif_report: true
 
+          # PR comments for new issues
+          # blackducksca_prComment_enabled: true
+
+          # Fix PRs (where supported)
+          # blackducksca_fixpr_enabled: true
+          # blackducksca_fixpr_maxCount: 5
+          # blackducksca_fixpr_filter_severities: "CRITICAL,HIGH"
+          # blackducksca_fixpr_useUpgradeGuidance: true
+
+      # Optional: archive logs for troubleshooting
+      - name: Archive Black Duck Scan Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackduck-logs
+          path: |
+            .bridge/logs
+            detect.log
+          if-no-files-found: ignore
