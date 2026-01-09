@@ -8,7 +8,7 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
-# Needed for SARIF upload and PR comments/Fix PRs
+# Permissions needed for SARIF upload and PR interactions (comments/Fix PRs)
 permissions:
   contents: write
   security-events: write
@@ -22,16 +22,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # If your build requires Java (Maven/Gradle or Detect needs a JRE), set it up.
-      # 'distribution' is required by actions/setup-java v2+ (v4 shown here).
+      # If your build or Detect needs Java, set it up.
+      # setup-java v2+ requires 'distribution' (e.g., temurin).
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'     # REQUIRED input (temurin, zulu, microsoft, etc.)
           java-version: '17'          # Choose 11/17/21 per your project
-      # Remove the Java step if your project/ecosystem doesn’t need it.
+      # Remove the Java step if your project doesn't need Java.
 
-      # Optional: example build (Maven). Adjust/remove for your stack.
+      # Optional: Example build step (Maven). Adjust/remove for your stack.
       - name: Build (skip tests)
         run: |
           if [ -f "pom.xml" ]; then
@@ -43,42 +43,17 @@ jobs:
       # ---- Black Duck SCA Scan via official action ----
       - name: Black Duck SCA Scan
         uses: blackduck-inc/black-duck-security-scan@v2
-        # The action’s inputs for SCA use the `blackducksca_*` prefix.
         with:
-          blackducksca_url: ${{ secrets.BLACKDUCK_URL }}
-          blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
+          # REQUIRED: provide product URL + token
+          blackducksca_url: ${{ vars.BLACKDUCK_URL }}          # from Repository Variables
+          blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}  # from Secrets (recommended)
 
-          # ---- Optional feature toggles ----
-          # Fail the build when Black Duck policy violations are found
-          # blackducksca_scan_failure_severities: "CRITICAL,HIGH"   # granular gate
-          # blackducksca_scan_full: true                           # Full scan vs PR scan
-          # blackducksca_waitForScan: true                         # Wait for server-side processing
+          # ---- Optional feature toggles (uncomment as needed) ----
+          # Fail build on specific severities (acts as quality gate)
+          # blackducksca_scan_failure_severities: "CRITICAL,HIGH"
 
-          # PR comments for new issues (on pull_request events)
-          # blackducksca_prComment_enabled: true
-
-          # Create & upload SARIF to GitHub (Code Scanning)
+          # Create & upload SARIF to GitHub code scanning
           # blackducksca_reports_sarif_create: true
           # blackducksca_reports_sarif_file_path: "blackduck-sca.sarif"
           # blackducksca_upload_sarif_report: true
 
-          # Enable Fix PRs for vulnerable components (when supported)
-          # blackducksca_fixpr_enabled: true
-          # blackducksca_fixpr_maxCount: 5
-          # blackducksca_fixpr_filter_severities: "CRITICAL,HIGH"
-          # blackducksca_fixpr_useUpgradeGuidance: true
-
-          # Pass Detect args or config file if you need advanced control
-          # detect_args: "--detect.tools=SIGNATURE_SCAN --detect.excluded.directories=dist,node_modules"
-          # detect_config_path: ".github/blackduck/detect.properties"
-
-      # Optional: archive logs for troubleshooting
-      - name: Archive Black Duck Scan Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: blackduck-logs
-          path: |
-            .bridge/logs
-            detect.log
-          if-no-files-found: ignore
