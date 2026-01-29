@@ -1,4 +1,3 @@
-
 name: Black Duck SCA
 
 on:
@@ -21,16 +20,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Only needed if your project/build requires Java.
+      # Detect (used under the hood) runs on Java; keep this unless you know you don't need it
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'   # REQUIRED by setup-java v2+ / v4
+          distribution: temurin
           java-version: '17'
-      # Remove this step if your project doesn't need Java.
-      # Docs show 'distribution' is mandatory. [2](https://polaris.synopsys.com/developer/default/documentation/c_cli)
 
-      # Optional: build example (Maven). Adjust/remove for your stack.
+      # Optional: build (adjust/remove for your stack)
       - name: Build (skip tests)
         run: |
           if [ -f "pom.xml" ]; then
@@ -42,36 +39,25 @@ jobs:
       # ---- Black Duck SCA Scan ----
       - name: Black Duck SCA Scan
         uses: blackduck-inc/black-duck-security-scan@v2.1.1
-        # Pinning a specific release avoids input drift; the docs show v2.x usage. [1](https://www.youtube.com/watch?v=Z5WBa_in6yM)
         with:
-          blackducksca_url:   ${{ secrets.BLACKDUCK_URL }}
+          # URL from Variables; Token from Secrets
+          blackducksca_url:   ${{ vars.BLACKDUCK_URL }}
           blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
 
-          # --- Optional features (uncomment to enable) ---
-          # Fail build on certain severities (quality gate)
+          # --- Optional quality gate ---
           # blackducksca_scan_failure_severities: "CRITICAL,HIGH"
 
-          # Create & upload SARIF to GitHub code scanning
+          # --- Optional: PR comments (needs token) ---
+          # blackducksca_prcomment_enabled: true
+          # github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # --- Optional: SARIF (needs token for upload) ---
           # blackducksca_reports_sarif_create: true
-          # blackducksca_reports_sarif_file_path: "blackduck-sca.sarif"
           # blackducksca_upload_sarif_report: true
+          # github_token: ${{ secrets.GITHUB_TOKEN }}
 
-          # PR comments for new issues
-          # blackducksca_prComment_enabled: true
-
-          # Fix PRs (where supported)
+          # --- Optional: Fix PRs (needs token) ---
           # blackducksca_fixpr_enabled: true
           # blackducksca_fixpr_maxCount: 5
           # blackducksca_fixpr_filter_severities: "CRITICAL,HIGH"
           # blackducksca_fixpr_useUpgradeGuidance: true
-
-      # Optional: archive logs for troubleshooting
-      - name: Archive Black Duck Scan Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: blackduck-logs
-          path: |
-            .bridge/logs
-            detect.log
-          if-no-files-found: ignore
