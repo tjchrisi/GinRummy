@@ -1,4 +1,4 @@
-name: Black Duck SCA (debug one-off)
+name: Black Duck SCA (debug capture)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,8 @@ jobs:
   sca-debug:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -20,31 +21,56 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Quick sanity echo (safe)
-      - name: Debug inputs (safe)
+      # Sanity: confirm inputs (without printing secrets)
+      - name: Echo inputs (safe)
         run: |
-          echo "BD URL (vars): ${{ vars.BLACKDUCK_URL }}"
-          echo "BD TOKEN PRESENT: ${{ secrets.BLACKDUCK_API_TOKEN != '' }}"
+          echo "BLACKDUCK_URL (vars): ${{ vars.BLACKDUCK_URL }}"
+          echo "BLACKDUCK_API_TOKEN present: ${{ secrets.BLACKDUCK_API_TOKEN != '' }}"
 
-      - name: Black Duck SCA Scan (debug)
+      - name: Black Duck SCA Scan
+        id: bd
         uses: blackduck-inc/black-duck-security-scan@v2.1.1
         with:
-          blackducksca_url:   ${{ vars.BLACKDUCK_URL }}
+          blackducksca_url:   ${{ vars.BLACKDUCK_URL }}          # base URL only, e.g., https://sca.field-test.blackduck.com
           blackducksca_token: ${{ secrets.BLACKDUCK_API_TOKEN }}
-          # Do NOT enable quality gate yet; we want a clean diagnostic
-          # blackducksca_scan_failure_severities: ""
         env:
           DETECT_PROJECT_NAME: ${{ github.event.repository.name }}
           DETECT_PROJECT_VERSION_NAME: ${{ github.ref_name }}
-          # Bridge/Detect respect general log levels; Bridge writes detailed logs into .bridge/logs/
-          # (Primary clues will still be in .bridge/logs even without extra flags)
-      
-      - name: Archive Black Duck Diagnostics
+
+      # Hunt for Bridge/Detect diagnostics wherever they may be,
+      # copy them into the workspace, and then upload as a single artifact.
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          set -euxo pipefail
+          mkdir -p bd-diag
+
+          echo "Scanning likely locations for logs..."
+          # Workspace (repo root)
+          if [ -d ".bridge" ]; then
+            echo "Found .bridge in workspace"
+            cp -R .bridge bd-diag/ || true
+          fi
+          if [ -f "detect.log" ]; then
+            cp detect.log bd-diag/ || true
+          fi
+
+          # Runner TEMP and HOME locations (sometimes Bridge/Detect write here)
+          for base in "$RUNNER_TEMP" "$HOME" "/home/runner"; do
+            if [ -d "$base" ]; then
+              echo "Searching under: $base"
+              # Copy any bridge or detect logs we find
+              find "$base" -type d -name ".bridge" -print -exec bash -lc 'cp -R "{}" "bd-diag/$(echo "{}" | sed "s#/#_#g")" || true' \;
+              find "$base" -type f -name "detect.log" -print -exec bash -lc 'dst="bd-diag/$(echo "{}" | sed "s#/#_#g")"; mkdir -p "$(dirname "$dst")"; cp "{}" "$dst" || true' \;
+              # Also capture generic bridge logs if they don’t live under .bridge
+              find "$base" -type f -iname "bridge*.log" -print -exec bash -lc 'dst="bd-diag/$(echo "{}" | sed "s#/#_#g")"; mkdir -p "$(dirname "$dst")"; cp "{}" "$dst" || true' \;
+            fi
+          done
+
+          echo "Diagnostics collected:"
+          ls -R bd-diag || true
+
+      - name: Upload Black Duck diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: blackduck-diagnostics
-          path: |
-            .bridge/**
-            detect.log
-          if-no-files-found: ignore
